@@ -3,15 +3,19 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import express from 'express';
 import dotenv from 'dotenv';
+import { createEmailSender } from './email.mjs';
+import { createAdminTournamentApi, createPublicTournamentApi } from './tournaments.mjs';
+import { createAdminBookingApi, createCustomerApi } from './customer-auth.mjs';
 
-export function createAdminAuth({ root = process.cwd(), credentials, now = Date.now } = {}) {
+export function createAdminAuth({ root = process.cwd(), credentials, now = Date.now, databasePath, sendMail } = {}) {
   const env = credentials ?? { ...dotenv.config({ path: resolve(root, '.env.local'), quiet: true }).parsed, ...process.env };
+  const deliverEmail = createEmailSender({ env, sendMail });
   const sessions = new Map();
   const attempts = new Map();
   const ttl = 8 * 60 * 60 * 1000;
   const app = express();
   app.disable('x-powered-by');
-  app.use(express.json({ limit: '2kb' }));
+  app.use(express.json({ limit: '8mb' }));
   app.use((req, res, next) => {
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -62,16 +66,24 @@ export function createAdminAuth({ root = process.cwd(), credentials, now = Date.
     if (!session(req)) return res.status(401).json({ error: 'Silakan login kembali.' });
     res.type('html').send(readFileSync(resolve(root, 'server/admin-panel.html'), 'utf8'));
   });
+  app.use(createAdminTournamentApi({ root, databasePath, isAdmin: req => !!session(req), deliverEmail }));
+  app.use(createAdminBookingApi({ root, databasePath, isAdmin: req => !!session(req), deliverEmail }));
   app.post('/logout', (req, res) => {
     sessions.delete(session(req));
     res.setHeader('Set-Cookie', cookie(req, '', 0));
     res.json({ authenticated: false });
   });
-  app.use((err, req, res, next) => res.status(400).json({ error: 'Permintaan tidak valid.' }));
+  app.use((err, req, res, next) => {
+    console.error('Admin API request failed:', err.message);
+    return res.status(err.status === 413 ? 413 : 400).json({
+      error: err.status === 413 ? 'Ukuran permintaan terlalu besar.' : 'Permintaan tidak valid.'
+    });
+  });
   return app;
 }
 
 export function adminAuthPlugin() {
+  let root = process.cwd();
   function configure(server) {
     server.middlewares.use((req, res, next) => {
       let pathname;
@@ -83,7 +95,15 @@ export function adminAuthPlugin() {
       }
       next();
     });
-    server.middlewares.use('/api/admin', createAdminAuth());
+    server.middlewares.use('/api/admin', createAdminAuth({ root }));
+    const customerApi = createCustomerApi({ root });
+    server.middlewares.use('/api/account', customerApi);
+    server.middlewares.use('/api/tournaments', createPublicTournamentApi({ root, getUser: customerApi.getUser }));
   }
-  return { name: 'admin-auth', configureServer: configure, configurePreviewServer: configure };
+  return {
+    name: 'admin-auth',
+    configResolved(config) { root = config.root; },
+    configureServer: configure,
+    configurePreviewServer: configure
+  };
 }

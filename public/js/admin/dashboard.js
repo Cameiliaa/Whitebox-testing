@@ -2,7 +2,7 @@
 function switchAdminTab(tabName) {
   AppState.adminTab = tabName;
 
-  const tabs = ['bookings', 'courts', 'products', 'facilities'];
+  const tabs = ['bookings', 'courts', 'products', 'facilities', 'tournaments', 'participants'];
   tabs.forEach(t => {
     const btn = document.getElementById(`admin-tab-${t}-btn`);
     const mobBtn = document.getElementById(`admin-mob-${t}-btn`);
@@ -35,6 +35,8 @@ function switchAdminTab(tabName) {
     }
   });
 
+  if (tabName === 'tournaments' && typeof renderAdminTournaments === 'function') renderAdminTournaments();
+  if (tabName === 'participants' && typeof renderAdminParticipants === 'function') renderAdminParticipants();
   lucide.createIcons();
 }
 
@@ -186,4 +188,3 @@ function renderAdminBookingsTable() {
 
   lucide.createIcons();
 }
-

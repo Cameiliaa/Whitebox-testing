@@ -90,7 +90,7 @@ function closeRescheduleModal() {
   document.getElementById('admin-reschedule-modal').classList.add('hidden');
 }
 
-function saveRescheduleForm(e) {
+async function saveRescheduleForm(e) {
   e.preventDefault();
   const bookingId = AppState.rescheduleTargetBookingId;
   const b = AppState.adminBookings.find(item => item.id === bookingId);
@@ -106,32 +106,9 @@ function saveRescheduleForm(e) {
     return;
   }
 
-  // 1. Release old slot(s)
-  const oldSlot = AppState.rescheduleTargetSlot;
-  if (oldSlot && oldSlot.dateKey && oldSlot.courtId && oldSlot.time) {
-    if (AppState.bookedSlots[oldSlot.dateKey] && AppState.bookedSlots[oldSlot.dateKey][oldSlot.courtId]) {
-      AppState.bookedSlots[oldSlot.dateKey][oldSlot.courtId] = AppState.bookedSlots[oldSlot.dateKey][oldSlot.courtId].filter(t => t !== oldSlot.time);
-    }
-  } else if (b.courtSlots && b.courtSlots.length > 0) {
-    b.courtSlots.forEach(s => {
-      if (AppState.bookedSlots[s.dateKey] && AppState.bookedSlots[s.dateKey][s.courtId]) {
-        AppState.bookedSlots[s.dateKey][s.courtId] = AppState.bookedSlots[s.dateKey][s.courtId].filter(t => t !== s.time);
-      }
-    });
-  }
-
-  // 2. Book new slot
-  if (!AppState.bookedSlots[newDateKey]) AppState.bookedSlots[newDateKey] = {};
-  if (!AppState.bookedSlots[newDateKey][newCourtId]) AppState.bookedSlots[newDateKey][newCourtId] = [];
-  if (!AppState.bookedSlots[newDateKey][newCourtId].includes(newHour)) {
-    AppState.bookedSlots[newDateKey][newCourtId].push(newHour);
-  }
-
-  // 3. Update booking record
   const courtObj = AppState.courts.find(c => c.id === newCourtId) || { name: newCourtId, basePrice: 50000 };
   const dateObj = AppState.dates.find(d => d.key === newDateKey) || { label: newDateKey };
-
-  b.courtSlots = [{
+  const newSlots = [{
     courtId: newCourtId,
     courtName: courtObj.name,
     dateKey: newDateKey,
@@ -140,8 +117,33 @@ function saveRescheduleForm(e) {
     price: courtObj.basePrice
   }];
 
-  b.details = `${courtObj.name} (${newHour} - ${dateObj.label})`;
-  b.adminNote = (b.adminNote ? b.adminNote + ' | ' : '') + `Rescheduled ke ${dateObj.label} ${newHour} (Alasan: ${reason})`;
+  const newDetails = `${courtObj.name} (${newHour} - ${dateObj.label})`;
+  const newNote = (b.adminNote ? b.adminNote + ' | ' : '') + `Rescheduled ke ${dateObj.label} ${newHour} (Alasan: ${reason})`;
+  try {
+    await persistAdminBookingStatus(b, b.status, newNote, { courtSlots: newSlots, details: newDetails });
+  } catch (error) {
+    showToast(error.message, 'error');
+    return;
+  }
+
+  const oldSlot = AppState.rescheduleTargetSlot;
+  if (oldSlot && oldSlot.dateKey && oldSlot.courtId && oldSlot.time) {
+    AppState.bookedSlots[oldSlot.dateKey][oldSlot.courtId] =
+      AppState.bookedSlots[oldSlot.dateKey][oldSlot.courtId].filter(t => t !== oldSlot.time);
+  } else {
+    b.courtSlots.forEach(slot => {
+      AppState.bookedSlots[slot.dateKey][slot.courtId] =
+        AppState.bookedSlots[slot.dateKey][slot.courtId].filter(t => t !== slot.time);
+    });
+  }
+  AppState.bookedSlots[newDateKey] ??= {};
+  AppState.bookedSlots[newDateKey][newCourtId] ??= [];
+  if (!AppState.bookedSlots[newDateKey][newCourtId].includes(newHour)) {
+    AppState.bookedSlots[newDateKey][newCourtId].push(newHour);
+  }
+  b.courtSlots = newSlots;
+  b.details = newDetails;
+  b.adminNote = newNote;
 
   closeRescheduleModal();
   renderAdminDashboard();
@@ -151,4 +153,3 @@ function saveRescheduleForm(e) {
 
   showToast(`Jadwal ${b.name} berhasil di-reschedule ke ${dateObj.label} ${newHour}!`, 'success');
 }
-

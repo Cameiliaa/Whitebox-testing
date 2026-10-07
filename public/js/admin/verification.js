@@ -1,4 +1,16 @@
 // Open Admin Verification Modal with QRIS & Customer Data
+async function persistAdminBookingStatus(booking, status, adminNote, changes = {}) {
+  const response = await fetch(`/api/admin/bookings/${encodeURIComponent(booking.id)}/status`, {
+    method: 'PATCH',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status, adminNote, ...changes })
+  });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(result.error || 'Status pesanan tidak dapat disimpan.');
+  return result;
+}
+
 function openAdminVerifyModal(index) {
   AppState.activeVerifyIndex = index;
   const b = AppState.adminBookings[index];
@@ -73,13 +85,20 @@ function closeAdminVerifyModal() {
   document.getElementById('admin-verify-modal').classList.add('hidden');
 }
 
-// APPROVAL FLOW: Updates status to LUNAS, locks court slots to RED, sends email simulation
-function executeAdminApproval() {
+// APPROVAL FLOW: Updates status to LUNAS and locks court slots in the schedule
+async function executeAdminApproval() {
   if (AppState.activeVerifyIndex === null) return;
   const b = AppState.adminBookings[AppState.activeVerifyIndex];
   if (!b) return;
 
   const note = document.getElementById('verify-admin-note-input').value.trim() || 'Pembayaran Lunas, silakan tunjukkan tiket PDF saat tiba di arena.';
+  let notification;
+  try {
+    notification = await persistAdminBookingStatus(b, 'LUNAS', note);
+  } catch (error) {
+    showToast(error.message, 'error');
+    return;
+  }
   b.status = 'LUNAS';
   b.adminNote = note;
 
@@ -98,8 +117,11 @@ function executeAdminApproval() {
     });
   }
 
-  // Email Notification Simulation
-  showToast(`✉️ Email konfirmasi & tiket telah dikirim ke ${b.email}`, 'success');
+  showToast(notification.emailSent === false && notification.notificationError
+    ? notification.notificationError
+    : notification.emailSent
+      ? `Email konfirmasi pesanan berhasil dikirim ke ${b.email}.`
+      : 'Pesanan berhasil dikonfirmasi.', notification.emailSent === false && notification.notificationError ? 'error' : 'success');
 
   closeAdminVerifyModal();
   renderAdminDashboard();
@@ -107,7 +129,7 @@ function executeAdminApproval() {
 }
 
 // REJECTION FLOW: Updates status to DITOLAK, frees court slots to GREEN, sends email rejection simulation
-function executeAdminRejection() {
+async function executeAdminRejection() {
   if (AppState.activeVerifyIndex === null) return;
   const b = AppState.adminBookings[AppState.activeVerifyIndex];
   if (!b) return;
@@ -121,6 +143,13 @@ function executeAdminRejection() {
     }
   }
 
+  let notification;
+  try {
+    notification = await persistAdminBookingStatus(b, 'DITOLAK', note);
+  } catch (error) {
+    showToast(error.message, 'error');
+    return;
+  }
   b.status = 'DITOLAK';
   b.adminNote = note;
 
@@ -133,11 +162,13 @@ function executeAdminRejection() {
     });
   }
 
-  // Email Rejection Notification Simulation
-  showToast(`✉️ Email pemberitahuan penolakan telah dikirim ke ${b.email}`, 'error');
+  showToast(notification.emailSent === false && notification.notificationError
+    ? notification.notificationError
+    : notification.emailSent
+      ? `Email pemberitahuan penolakan berhasil dikirim ke ${b.email}.`
+      : 'Pesanan berhasil ditolak.', notification.emailSent === false && notification.notificationError ? 'error' : 'info');
 
   closeAdminVerifyModal();
   renderAdminDashboard();
   renderScheduleGrid();
 }
-

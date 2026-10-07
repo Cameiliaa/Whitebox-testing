@@ -18,6 +18,7 @@
       <!-- Center Navigation Links (PENYEWA MODE ONLY - Clean, Single Line, No Wrapping) -->
       <nav id="customer-nav-links" class="hidden md:flex items-center gap-6 lg:gap-8 text-sm font-semibold text-slate-600 shrink-0">
         <a href="#beranda" class="hover:text-emerald-600 transition-colors whitespace-nowrap">Beranda</a>
+        <a href="#turnamen" class="hover:text-emerald-600 transition-colors whitespace-nowrap">Turnamen</a>
         <a href="#jadwal" class="hover:text-emerald-600 transition-colors whitespace-nowrap">Jadwal & Lapangan</a>
         <a href="#sewa-alat" class="hover:text-emerald-600 transition-colors whitespace-nowrap">Sewa Alat & Kafe</a>
         <a href="#fasilitas" class="hover:text-emerald-600 transition-colors whitespace-nowrap">Fasilitas</a>
@@ -37,6 +38,10 @@
           <span>E-Tiket Saya</span>
         </button>
 
+        <button id="customer-account-nav-btn" onclick="openCustomerAccount()" class="px-3 py-2 rounded-xl border border-slate-200 text-slate-700 hover:border-emerald-500 hover:bg-emerald-50 text-xs font-bold transition whitespace-nowrap shrink-0">
+          <span id="customer-account-nav-label">Masuk / Daftar</span>
+        </button>
+
         <!-- Cart Button (Penyewa Mode Only) -->
         <button id="cart-btn" onclick="toggleCartDrawer(true)" class="relative p-2.5 rounded-xl border border-slate-200 hover:border-emerald-500 hover:bg-emerald-50 text-slate-700 hover:text-emerald-700 transition flex items-center gap-2 whitespace-nowrap shrink-0">
           <i data-lucide="shopping-bag" class="w-5 h-5 text-emerald-600 shrink-0"></i>
@@ -53,4 +58,3 @@
 
     </div>
   </header>
-

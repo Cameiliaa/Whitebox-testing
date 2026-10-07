@@ -18,6 +18,18 @@ test('dev and preview protect admin panel and serve customer page', async () => 
       assert.ok(!page.includes('<!-- include:'));
       assert.ok(!page.includes('Admin Dashboard Badminton Hub'));
       assert.ok(!page.includes('Switch to Admin View'));
+      const publicTournaments = await fetch(`${base}/api/tournaments`);
+      assert.equal(publicTournaments.status, 200);
+      assert.ok(Array.isArray((await publicTournaments.json()).tournaments));
+      const customerSession = await fetch(`${base}/api/account/session`);
+      assert.equal(customerSession.status, 200);
+      assert.equal((await customerSession.json()).authenticated, false);
+      const guestRegistration = await fetch(`${base}/api/tournaments/nonexistent/registrations`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{}'
+      });
+      assert.equal(guestRegistration.status, 401);
       assert.equal((await fetch(`${base}/api/admin/panel`)).status, 401);
       const context = createContext({ window: { addEventListener() {} }, document: { addEventListener() {} }, tailwind: {} });
       for (const match of page.matchAll(/<script src="(\/[^\"]+)"[^>]*><\/script>/g)) {

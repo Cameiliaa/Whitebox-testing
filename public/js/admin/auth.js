@@ -35,6 +35,23 @@
     document.getElementById('admin-view').outerHTML = panel;
     authenticated = true;
     if (AppState.currentRole !== 'ADMIN') applyAdminView(true);
+    try {
+      const bookingsResponse = await request('bookings');
+      const { bookings } = await bookingsResponse.json();
+      if (!Array.isArray(bookings)) throw new Error('Server tidak mengirim daftar pesanan yang valid.');
+      AppState.adminBookings = bookings;
+      bookings.filter(booking => !['DITOLAK', 'Ditolak', 'DIBATALKAN'].includes(booking.status))
+        .flatMap(booking => booking.courtSlots ?? []).forEach(slot => {
+          AppState.bookedSlots[slot.dateKey] ??= {};
+          AppState.bookedSlots[slot.dateKey][slot.courtId] ??= [];
+          if (!AppState.bookedSlots[slot.dateKey][slot.courtId].includes(slot.time)) {
+            AppState.bookedSlots[slot.dateKey][slot.courtId].push(slot.time);
+          }
+        });
+      renderAdminDashboard();
+    } catch (err) {
+      showToast(`Gagal memuat pesanan tersimpan: ${err.message}`, 'error');
+    }
     closeLogin();
   }
   window.registerAdminLogoClick = () => {

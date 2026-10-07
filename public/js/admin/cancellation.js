@@ -1,13 +1,20 @@
 // ==================== CANCELLATION LOGIC ====================
-function confirmCancelBooking(bookingId) {
+async function confirmCancelBooking(bookingId) {
   const b = AppState.adminBookings.find(item => item.id === bookingId);
   if (!b) return;
 
   const reason = prompt(`Batalkan booking ${b.id} (${b.name})?\nSlot lapangan akan langsung kembali dibuka untuk penyewa lain.\n\nMasukkan alasan pembatalan:`, 'Permintaan pembatalan dari pelanggan');
   if (reason === null) return; // user cancelled prompt
 
+  const adminNote = (b.adminNote ? b.adminNote + ' | ' : '') + `Dibatalkan oleh Admin: ${reason || 'Permintaan pelanggan'}`;
+  try {
+    var notification = await persistAdminBookingStatus(b, 'DIBATALKAN', adminNote);
+  } catch (error) {
+    showToast(error.message, 'error');
+    return;
+  }
   b.status = 'DIBATALKAN';
-  b.adminNote = (b.adminNote ? b.adminNote + ' | ' : '') + `Dibatalkan oleh Admin: ${reason || 'Permintaan pelanggan'}`;
+  b.adminNote = adminNote;
 
   // Free all court slots of this booking
   if (b.courtSlots && b.courtSlots.length > 0) {
@@ -23,7 +30,12 @@ function confirmCancelBooking(bookingId) {
   renderAdminScheduleMatrix();
   renderScheduleGrid();
 
-  showToast(`Booking ${b.id} dibatalkan. Slot lapangan kembali tersedia!`, 'info');
+  showToast(notification.emailSent === false && notification.notificationError
+    ? notification.notificationError
+    : notification.emailSent
+      ? `Booking ${b.id} dibatalkan. Email pemberitahuan dikirim.`
+      : `Booking ${b.id} dibatalkan. Slot lapangan kembali tersedia!`,
+  notification.emailSent === false && notification.notificationError ? 'error' : 'info');
 }
 
 function confirmCancelSlot(bookingId, courtId, dateKey, slotTime) {
@@ -39,4 +51,3 @@ function confirmCancelSlot(bookingId, courtId, dateKey, slotTime) {
   }
   confirmCancelBooking(bookingId);
 }
-

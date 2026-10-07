@@ -5,8 +5,8 @@
   "type": "module",
   "scripts": {
     "admin:setup": "node scripts/admin-setup.mjs",
-    "test:auth": "node --test server/admin-auth.test.mjs server/admin-serving.test.mjs",
-    "dev": "node ./node_modules/vite/bin/vite.js --port=3000 --host=0.0.0.0",
+    "test:auth": "node --test server/admin-auth.test.mjs server/admin-serving.test.mjs server/manual-booking.test.mjs server/tournaments.test.mjs",
+    "dev": "node ./node_modules/vite/bin/vite.js --port=3000 --strictPort --host=0.0.0.0",
     "build": "node ./node_modules/vite/bin/vite.js build",
     "preview": "node ./node_modules/vite/bin/vite.js preview",
     "clean": "rm -rf dist server.js",
@@ -19,6 +19,7 @@
     "lucide-react": "^0.546.0",
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
+    "nodemailer": "^7.0.3",
     "vite": "^8.3.0",
     "express": "^4.21.2",
     "dotenv": "^17.2.3",

@@ -46,7 +46,7 @@ function simulateAutoProof() {
   lucide.createIcons();
 }
 
-function handleCheckoutSubmit(e) {
+async function handleCheckoutSubmit(e) {
   e.preventDefault();
 
   const name = document.getElementById('cust-name').value.trim();
@@ -64,8 +64,6 @@ function handleCheckoutSubmit(e) {
   let discount = courtSlots >= 2 ? Math.round(subtotal * 0.1) : 0;
   let grandTotal = subtotal - discount;
 
-  const bookingId = 'BHUB-2026-' + Math.floor(1000 + Math.random() * 9000);
-
   // Detail item description and structured slots
   const courtSlotsArray = [];
   const addonsArray = [];
@@ -81,16 +79,6 @@ function handleCheckoutSubmit(e) {
         price: item.price
       });
 
-      // Add to booked slots registry
-      if (!AppState.bookedSlots[item.dateKey]) {
-        AppState.bookedSlots[item.dateKey] = {};
-      }
-      if (!AppState.bookedSlots[item.dateKey][item.courtId]) {
-        AppState.bookedSlots[item.dateKey][item.courtId] = [];
-      }
-      if (!AppState.bookedSlots[item.dateKey][item.courtId].includes(item.time)) {
-        AppState.bookedSlots[item.dateKey][item.courtId].push(item.time);
-      }
     } else {
       addonsArray.push({
         name: item.name,
@@ -108,7 +96,6 @@ function handleCheckoutSubmit(e) {
   }).join(' · ');
 
   const newBooking = {
-    id: bookingId,
     name: name,
     phone: phone,
     email: email,
@@ -129,9 +116,42 @@ function handleCheckoutSubmit(e) {
     }
   };
 
+  try {
+    const response = await fetch('/api/account/bookings', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: newBooking.name,
+        phone: newBooking.phone,
+        email: newBooking.email,
+        details: newBooking.details,
+        courtSlots: newBooking.courtSlots,
+        addons: newBooking.addons,
+        total: newBooking.total,
+        proofFileName: newBooking.proofFileName
+      })
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok || !result.booking) throw new Error(result.error || 'Pesanan tidak dapat disimpan. Coba lagi.');
+    Object.assign(newBooking, result.booking);
+  } catch (error) {
+    showToast(error.message, 'error');
+    return;
+  }
+
+  newBooking.courtSlots.forEach(slot => {
+    AppState.bookedSlots[slot.dateKey] ??= {};
+    AppState.bookedSlots[slot.dateKey][slot.courtId] ??= [];
+    if (!AppState.bookedSlots[slot.dateKey][slot.courtId].includes(slot.time)) {
+      AppState.bookedSlots[slot.dateKey][slot.courtId].push(slot.time);
+    }
+  });
+
   // Push to Admin Verification queue
   AppState.adminBookings.unshift(newBooking);
-  AppState.latestCustomerBookingId = bookingId;
+  AppState.latestCustomerBookingId = newBooking.id;
+  window.dispatchEvent(new CustomEvent('customer:history-updated'));
 
   // Show Nav Ticket button
   const navTicketBtn = document.getElementById('my-ticket-nav-btn');
@@ -148,4 +168,3 @@ function handleCheckoutSubmit(e) {
 
   showToast('Pesanan berhasil dibuat! E-tiket telah terbit.', 'success');
 }
-

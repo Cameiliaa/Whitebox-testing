@@ -96,6 +96,18 @@
           <span>Kelola Fasilitas Arena</span>
           <span id="admin-tab-facilities-badge" class="px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 text-[10px] font-bold">4 Fasilitas</span>
         </button>
+
+        <button id="admin-tab-tournaments-btn" onclick="switchAdminTab('tournaments')" class="px-4 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-2 bg-white text-slate-700 hover:bg-slate-200 border border-slate-200">
+          <i data-lucide="trophy" class="w-4 h-4 text-emerald-600"></i>
+          <span>Kelola Turnamen</span>
+          <span id="admin-tab-tournaments-badge" class="px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 text-[10px] font-bold">0</span>
+        </button>
+
+        <button id="admin-tab-participants-btn" onclick="switchAdminTab('participants')" class="px-4 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-2 bg-white text-slate-700 hover:bg-slate-200 border border-slate-200">
+          <i data-lucide="users" class="w-4 h-4 text-emerald-600"></i>
+          <span>Data Pendaftar</span>
+          <span id="admin-tab-participants-badge" class="px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 text-[10px] font-bold">0</span>
+        </button>
       </div>
 
       <!-- PANEL 1: VERIFIKASI BOOKING & QRIS -->
@@ -284,6 +296,50 @@
         <!-- Facilities Grid Container in Admin -->
         <div id="admin-facilities-cards-container" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
           <!-- Rendered via JavaScript -->
+        </div>
+      </div>
+
+      <div id="admin-panel-tournaments" class="hidden space-y-6">
+        <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <h3 class="text-base font-bold text-slate-900 flex items-center gap-2"><i data-lucide="trophy" class="w-4 h-4 text-emerald-600"></i>Turnamen & Pendaftaran</h3>
+            <p class="text-xs text-slate-500 mt-1">Atur informasi, kategori, diskon, persyaratan, dan status pendaftaran.</p>
+          </div>
+          <button type="button" onclick="openTournamentEditor()" class="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 shadow-md shadow-emerald-600/20">
+            <i data-lucide="plus" class="w-4 h-4"></i>Tambah Turnamen
+          </button>
+        </div>
+        <div id="admin-tournaments-list" class="grid grid-cols-1 xl:grid-cols-2 gap-5">
+          <div class="col-span-full rounded-xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-500">Memuat turnamen…</div>
+        </div>
+      </div>
+
+      <div id="admin-panel-participants" class="hidden space-y-6">
+        <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
+          <div class="mb-4">
+            <h3 class="text-base font-bold text-slate-900 flex items-center gap-2"><i data-lucide="users" class="w-4 h-4 text-emerald-600"></i>Data Pendaftar Turnamen</h3>
+            <p class="text-xs text-slate-500 mt-1">Cari peserta, tinjau bukti pembayaran, dan perbarui status.</p>
+          </div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+            <label class="sm:col-span-2 xl:col-span-1"><span class="mb-1 block text-[11px] font-bold text-slate-600">Cari peserta</span><input id="admin-participant-search" type="search" placeholder="Nama, WA, email, atau kode…" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-xs outline-none focus:border-emerald-500"></label>
+            <label><span class="mb-1 block text-[11px] font-bold text-slate-600">Turnamen</span><select id="admin-participant-tournament-filter" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-xs"><option value="">Semua turnamen</option></select></label>
+            <label><span class="mb-1 block text-[11px] font-bold text-slate-600">Kategori</span><select id="admin-participant-category-filter" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-xs"><option value="">Semua kategori</option></select></label>
+            <label><span class="mb-1 block text-[11px] font-bold text-slate-600">Status</span><select id="admin-participant-status-filter" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-xs"><option value="">Semua status</option><option value="Menunggu Pembayaran">Menunggu Pembayaran</option><option value="Menunggu Verifikasi">Menunggu Verifikasi</option><option value="Lunas">Lunas</option><option value="Tidak Diperlukan">Tidak Diperlukan</option><option value="Ditolak">Pembayaran Ditolak</option><option value="Menunggu Konfirmasi">Pendaftaran Menunggu Konfirmasi</option><option value="Diterima">Pendaftaran Diterima</option></select></label>
+          </div>
+        </div>
+        <div class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xs">
+          <div class="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+            <h4 class="text-sm font-bold text-slate-900">Daftar peserta</h4>
+            <span id="admin-participant-count" class="text-xs font-semibold text-slate-500">0 peserta</span>
+          </div>
+          <div class="overflow-x-auto">
+            <table class="min-w-[1050px] w-full text-left text-xs">
+              <thead class="bg-slate-50 text-[10px] uppercase tracking-wider text-slate-500">
+                <tr><th class="px-4 py-3">Peserta</th><th class="px-4 py-3">Kontak</th><th class="px-4 py-3">Turnamen / Kategori</th><th class="px-4 py-3">Waktu Daftar</th><th class="px-4 py-3">Pembayaran</th><th class="px-4 py-3">Pendaftaran</th><th class="px-4 py-3">Aksi</th></tr>
+              </thead>
+              <tbody id="admin-participants-tbody" class="divide-y divide-slate-100"></tbody>
+            </table>
+          </div>
         </div>
       </div>
 

@@ -150,7 +150,7 @@ function closeManualBookingModal() {
   document.getElementById('admin-manual-booking-modal').classList.add('hidden');
 }
 
-function saveManualBookingForm(e) {
+async function saveManualBookingForm(e) {
   e.preventDefault();
   const value = id => document.getElementById(id).value.trim();
   const name = value('manual-cust-name'), phone = value('manual-cust-phone');
@@ -164,19 +164,41 @@ function saveManualBookingForm(e) {
     `${first.courtName} (${first.dateLabel}, ${first.time.split(' - ')[0]} – ${quote.slots.at(-1).time.split(' - ')[1]}) · ${manualDurationLabel(quote.slots.map(slot => slot.time))}`,
     ...quote.addons.map(item => `${item.name} (${item.qty}x)`), `Manual ${payMethod}`
   ].join(' · ');
-  // Validate the entire order before reserving any slot.
+  const booking = {
+    name, phone,
+    email: value('manual-cust-email') || 'walkin@badmintonhub.id',
+    details,
+    courtSlots: quote.slots,
+    addons: quote.addons,
+    total: quote.total,
+    status: value('manual-pay-status'),
+    paymentMethod: payMethod,
+    adminNote: `Booking Manual via ${payMethod}${value('manual-booking-note') ? ': ' + value('manual-booking-note') : ''}`
+  };
+  try {
+    const response = await fetch('/api/admin/bookings', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(booking)
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok || !result.id) throw new Error(result.error || 'Pemesanan manual tidak dapat disimpan.');
+    booking.id = result.id;
+    booking.createdAt = result.createdAt;
+    booking.timestamp = new Date(result.createdAt).toLocaleString('id-ID');
+    booking.proofUploaded = true;
+    booking.proofFileName = 'manual_cashier_entry.jpg';
+  } catch (error) {
+    showToast(error.message, 'error');
+    return;
+  }
+
+  // Reserve slots in the local view only after the server confirms the booking.
   if (!AppState.bookedSlots[first.dateKey]) AppState.bookedSlots[first.dateKey] = {};
   if (!AppState.bookedSlots[first.dateKey][first.courtId]) AppState.bookedSlots[first.dateKey][first.courtId] = [];
   AppState.bookedSlots[first.dateKey][first.courtId].push(...quote.slots.map(slot => slot.time));
-  AppState.adminBookings.unshift({
-    id: 'BHUB-MANUAL-' + crypto.randomUUID(), name, phone,
-    email: value('manual-cust-email') || 'walkin@badmintonhub.id', details,
-    courtSlots: quote.slots, addons: quote.addons, total: quote.total,
-    proofUploaded: true, proofFileName: 'manual_cashier_entry.jpg',
-    status: value('manual-pay-status'), paymentMethod: payMethod,
-    adminNote: `Booking Manual via ${payMethod}${value('manual-booking-note') ? ': ' + value('manual-booking-note') : ''}`,
-    timestamp: new Date().toLocaleString('id-ID')
-  });
+  AppState.adminBookings.unshift(booking);
   closeManualBookingModal();
   renderAdminDashboard();
   renderScheduleGrid();

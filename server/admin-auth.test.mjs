@@ -11,7 +11,7 @@ test('admin login, protected panel, logout, expiry, throttling and origin protec
   app.use('/api/admin', createAdminAuth({ credentials: {
     ADMIN_USERNAME: 'test-admin',
     ADMIN_PASSWORD_HASH: `${salt}:${scryptSync('test-password-123', salt, 64).toString('hex')}`
-  }, now: () => time }));
+  }, now: () => time, databasePath: ':memory:' }));
   const server = app.listen(0, '127.0.0.1');
   await new Promise(resolve => server.once('listening', resolve));
   const base = `http://127.0.0.1:${server.address().port}/api/admin`;
@@ -46,7 +46,7 @@ test('admin login, protected panel, logout, expiry, throttling and origin protec
 });
 
 test('missing credentials fail closed', async () => {
-  const server = createAdminAuth({ credentials: {} }).listen(0, '127.0.0.1');
+  const server = createAdminAuth({ credentials: {}, databasePath: ':memory:' }).listen(0, '127.0.0.1');
   await new Promise(resolve => server.once('listening', resolve));
   try {
     const response = await fetch(`http://127.0.0.1:${server.address().port}/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });

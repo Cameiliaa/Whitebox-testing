@@ -22,15 +22,21 @@ test('two hours and additional products produce one correctly priced order', () 
   assert.equal(context.manualDurationLabel(['08:00 - 09:00', '09:00 - 10:00']), '2 jam');
   assert.equal(context.manualDurationLabel(['08:00 - 08:30']), '0,5 jam');
 });
-test('save reserves every selected slot and stores products in one booking', () => {
+test('save persists an admin booking before reserving every selected slot', async () => {
   const { state, context } = fixture();
   const fields = { 'manual-cust-name': 'Pelanggan', 'manual-cust-phone': '0812345678', 'manual-cust-email': '', 'manual-pay-method': 'Tunai di Kasir', 'manual-pay-status': 'LUNAS', 'manual-booking-note': '' };
   context.document = { getElementById: id => ({ value: fields[id] }) };
-  context.crypto = { randomUUID: () => 'test-id' };
+  context.fetch = async (url, options) => {
+    assert.equal(url, '/api/admin/bookings');
+    const booking = JSON.parse(options.body);
+    assert.equal(booking.status, 'LUNAS');
+    return { ok: true, json: async () => ({ id: 'BHUB-MANUAL-test-id', createdAt: '2026-10-07T00:00:00.000Z' }) };
+  };
   for (const name of ['closeManualBookingModal', 'renderAdminDashboard', 'renderScheduleGrid', 'showToast']) context[name] = () => {};
   context.readManualBookingQuote = () => context.calculateManualBooking('day', 'c1', '08:00 - 09:00', 2, [{ productId: 'racket', qty: 2 }]);
-  context.saveManualBookingForm({ preventDefault() {} });
+  await context.saveManualBookingForm({ preventDefault() {} });
   assert.equal(state.adminBookings.length, 1);
+  assert.equal(state.adminBookings[0].id, 'BHUB-MANUAL-test-id');
   assert.equal(state.adminBookings[0].courtSlots.length, 2);
   assert.equal(state.adminBookings[0].addons[0].qty, 2);
   assert.equal(state.adminBookings[0].total, 130000);
