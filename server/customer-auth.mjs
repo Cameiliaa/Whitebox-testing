@@ -6,6 +6,7 @@ import { getTournamentDatabase } from './tournaments.mjs';
 const SESSION_TTL = 7 * 24 * 60 * 60 * 1000;
 const VERIFY_TTL = 30 * 60 * 1000;
 const RESET_TTL = 15 * 60 * 1000;
+const isValidIndonesianBookingPhone = phone => typeof phone === 'string' && /^[0-9]{9,14}$/.test(phone);
 
 function hash(value) {
   return createHash('sha256').update(value).digest('hex');
@@ -35,11 +36,13 @@ function sendError(res, status, error) {
   return res.status(status).json({ error });
 }
 
-export function createCustomerApi({ root = process.cwd(), databasePath, env = process.env, now = Date.now, sendMail } = {}) {
+export function createCustomerApi({
+  root = process.cwd(), databasePath, env = process.env, now = Date.now, sendMail, deliverEmail
+} = {}) {
   const router = express.Router();
   const db = getTournamentDatabase(root, databasePath);
   const attempts = new Map();
-  const deliver = createEmailSender({ env, sendMail });
+  const deliver = deliverEmail ?? createEmailSender({ env, sendMail });
 
   function publicBaseUrl() {
     const url = new URL(env.APP_PUBLIC_URL || 'http://localhost:3000');
@@ -239,11 +242,11 @@ export function createCustomerApi({ root = process.cwd(), databasePath, env = pr
     return res.json({ registrations, bookings });
   });
 
-  router.post('/bookings', (req, res) => {
+  router.post('/bookings', async (req, res) => {
     const { name, phone, email, details, courtSlots, addons, total, proofFileName } = req.body ?? {};
     const user = getUser(req);
     if (typeof name !== 'string' || name.trim().length < 2 || name.trim().length > 120 ||
-      typeof phone !== 'string' || !/^[+]?[0-9 ()-]{8,20}$/.test(phone.trim()) ||
+      !isValidIndonesianBookingPhone(phone) ||
       typeof email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) ||
       typeof details !== 'string' || details.length > 3000 ||
       !Array.isArray(courtSlots) || !Array.isArray(addons) ||
@@ -288,8 +291,27 @@ export function createCustomerApi({ root = process.cwd(), databasePath, env = pr
         id, user?.id ?? null, name.trim(), phone.trim(), email.trim().toLowerCase(), details,
         JSON.stringify(courtSlots), JSON.stringify(addons), total, proofFileName, createdAt
       );
+      const schedule = courtSlots.map(slot => {
+        const date = new Intl.DateTimeFormat('id-ID', { dateStyle: 'long', timeZone: 'Asia/Jakarta' })
+          .format(new Date(`${slot.dateKey}T00:00:00+07:00`));
+        return `${slot.courtName}: ${date}, pukul ${slot.time} WIB`;
+      }).join('\n');
+      let emailSent = false;
+      try {
+        const detailsText = `Kode pesanan: ${id}\nJadwal:\n${schedule}\nRincian: ${details}\nTotal: Rp${total.toLocaleString('id-ID')}\nStatus: Menunggu Verifikasi`;
+        await deliver({
+          to: email.trim().toLowerCase(),
+          subject: `Pesanan lapangan diterima: ${id}`,
+          text: `Halo ${name.trim()},\n\nPesanan lapangan Anda sudah kami terima dan sedang menunggu verifikasi pembayaran.\n\n${detailsText}\n\nKami akan mengirim email lagi setelah status pesanan diperbarui.`,
+          html: `<div style="font-family:Arial,sans-serif;color:#0f172a;line-height:1.5"><h2>Pesanan lapangan diterima</h2><p>Halo ${escapeEmailHtml(name.trim())}, pesanan Anda sedang menunggu verifikasi pembayaran.</p><p><strong>Kode pesanan:</strong> ${escapeEmailHtml(id)}</p><h3>Jadwal</h3>${schedule.split('\n').map(line => `<p style="margin:6px 0">${escapeEmailHtml(line)}</p>`).join('')}<p><strong>Rincian:</strong> ${escapeEmailHtml(details)}</p><p><strong>Total:</strong> Rp${total.toLocaleString('id-ID')}</p><p>Status: Menunggu Verifikasi</p><p>Kami akan mengirim email lagi setelah status pesanan diperbarui.</p></div>`
+        });
+        emailSent = true;
+      } catch (error) {
+        console.error('Pesanan tersimpan, tetapi email tanda terima gagal dikirim:', error.message);
+      }
       return res.status(201).json({
-        success: true,
+        success: true, emailSent,
+        notificationError: emailSent ? undefined : 'Pesanan tersimpan, tetapi email tanda terima gagal dikirim.',
         booking: { id, userId: user?.id ?? null, name: name.trim(), phone: phone.trim(), email: email.trim().toLowerCase(),
           details, courtSlots, addons, total, proofUploaded: !!proofFileName, proofFileName,
           status: 'Menunggu Verifikasi', adminNote: '', createdAt }
@@ -311,9 +333,11 @@ export function createCustomerApi({ root = process.cwd(), databasePath, env = pr
   return app;
 }
 
-export function createAdminBookingApi({ root = process.cwd(), databasePath, isAdmin = () => false, deliverEmail = createEmailSender() } = {}) {
+export function createAdminBookingApi({
+  root = process.cwd(), databasePath, isAdmin = () => false, deliverEmail = createEmailSender(), database
+} = {}) {
   const router = express.Router();
-  const db = getTournamentDatabase(root, databasePath);
+  const db = database ?? getTournamentDatabase(root, databasePath);
   const adminOnly = handler => (req, res, next) => {
     if (!isAdmin(req)) return sendError(res, 401, 'Silakan login admin terlebih dahulu.');
     return handler(req, res, next);
@@ -341,7 +365,7 @@ export function createAdminBookingApi({ root = process.cwd(), databasePath, isAd
     const { name, phone, email, details, courtSlots, addons, total, status, adminNote = '', paymentMethod = '' } = req.body ?? {};
     const allowed = new Set(['Menunggu Verifikasi', 'LUNAS', 'Disetujui', 'DITOLAK', 'DIBATALKAN']);
     if (typeof name !== 'string' || name.trim().length < 2 || name.trim().length > 120 ||
-      typeof phone !== 'string' || !/^[+]?[0-9 ()-]{8,20}$/.test(phone.trim()) ||
+      !isValidIndonesianBookingPhone(phone) ||
       typeof email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) ||
       typeof details !== 'string' || details.length > 3000 ||
       !Array.isArray(courtSlots) || !Array.isArray(addons) ||
@@ -388,7 +412,8 @@ export function createAdminBookingApi({ root = process.cwd(), databasePath, isAd
     if (!current) return sendError(res, 404, 'Pesanan tidak ditemukan.');
     const nextStatus = status ?? current.status;
     const nextNote = adminNote ?? current.admin_note;
-    const nextSlots = courtSlots ?? JSON.parse(current.court_slots_json);
+    const currentSlots = JSON.parse(current.court_slots_json);
+    const nextSlots = courtSlots ?? currentSlots;
     const nextDetails = details ?? current.details;
     if (!allowed.has(nextStatus) || typeof nextNote !== 'string' || nextNote.length > 2000 ||
       typeof nextDetails !== 'string' || nextDetails.length > 3000 || !Array.isArray(nextSlots) ||
@@ -400,6 +425,10 @@ export function createAdminBookingApi({ root = process.cwd(), databasePath, isAd
     }
     const requestedSlots = new Set(nextSlots.map(slot => `${slot.dateKey}:${slot.courtId}:${slot.time}`));
     if (requestedSlots.size !== nextSlots.length) return sendError(res, 400, 'Slot yang sama tidak dapat dimasukkan dua kali.');
+    const scheduleKey = slots => JSON.stringify(slots
+      .map(slot => `${slot.dateKey}:${slot.courtId}:${slot.time}`)
+      .sort());
+    const scheduleChanged = scheduleKey(currentSlots) !== scheduleKey(nextSlots);
     if (!['DITOLAK', 'Ditolak', 'DIBATALKAN'].includes(nextStatus)) {
       const conflict = db.prepare(`SELECT id, court_slots_json FROM court_bookings
         WHERE id<>? AND status NOT IN ('DITOLAK', 'Ditolak', 'DIBATALKAN')`).all(req.params.id)
@@ -415,25 +444,37 @@ export function createAdminBookingApi({ root = process.cwd(), databasePath, isAd
     const isRejected = ['DITOLAK', 'Ditolak'].includes(nextStatus);
     const wasCancelled = current.status === 'DIBATALKAN';
     const isCancelled = nextStatus === 'DIBATALKAN';
-    if (wasConfirmed && isConfirmed || wasRejected && isRejected || wasCancelled && isCancelled ||
-      !isConfirmed && !isRejected && !isCancelled) {
+    const statusChanged = current.status !== nextStatus;
+    if (!scheduleChanged && (wasConfirmed && isConfirmed || wasRejected && isRejected ||
+      wasCancelled && isCancelled || !statusChanged || !isConfirmed && !isRejected && !isCancelled)) {
       return res.json({ success: true, emailSent: false });
     }
 
-    const confirmed = isConfirmed;
-    const schedule = nextSlots.map(slot => {
+    const formatSchedule = slots => slots.map(slot => {
       const date = new Intl.DateTimeFormat('id-ID', { dateStyle: 'long', timeZone: 'Asia/Jakarta' })
         .format(new Date(`${slot.dateKey}T00:00:00+07:00`));
       return `${slot.courtName}: ${date}, pukul ${slot.time} WIB`;
     }).join('\n');
-    const subject = confirmed
-      ? `Pesanan lapangan dikonfirmasi: ${current.id}`
-      : `Pembaruan pesanan lapangan: ${current.id}`;
-    const statusMessage = confirmed
-      ? 'Pesanan lapangan Anda telah dikonfirmasi.'
-      : isCancelled ? 'Pesanan lapangan Anda telah dibatalkan.' : 'Mohon maaf, pesanan lapangan Anda ditolak.';
-    const text = `Halo ${current.name},\n\n${statusMessage}\n\nKode pesanan: ${current.id}\nJadwal:\n${schedule}\n\nRincian: ${nextDetails}\nTotal: Rp${Number(current.total).toLocaleString('id-ID')}\nStatus: ${nextStatus}${nextNote.trim() ? `\nCatatan: ${nextNote.trim()}` : ''}\n\nSimpan email ini sebagai bukti informasi pesanan.`;
-    const html = `<div style="font-family:Arial,sans-serif;color:#0f172a;line-height:1.5"><h2>${escapeEmailHtml(statusMessage)}</h2><p>Halo ${escapeEmailHtml(current.name)},</p><p><strong>Kode pesanan:</strong> ${escapeEmailHtml(current.id)}</p><h3>Jadwal</h3>${schedule.split('\n').map(line => `<p style="margin:6px 0">${escapeEmailHtml(line)}</p>`).join('')}<p><strong>Rincian:</strong> ${escapeEmailHtml(nextDetails)}</p><p><strong>Total:</strong> Rp${Number(current.total).toLocaleString('id-ID')}</p><p><strong>Status:</strong> ${escapeEmailHtml(nextStatus)}</p>${nextNote.trim() ? `<p><strong>Catatan:</strong> ${escapeEmailHtml(nextNote.trim())}</p>` : ''}<p>Simpan email ini sebagai bukti informasi pesanan.</p></div>`;
+    const previousSchedule = formatSchedule(currentSlots);
+    const schedule = formatSchedule(nextSlots);
+    const statusMessage = scheduleChanged
+      ? 'Jadwal booking Anda telah diubah oleh admin.'
+      : isConfirmed
+        ? 'Pesanan lapangan Anda telah dikonfirmasi.'
+        : isCancelled ? 'Pesanan lapangan Anda telah dibatalkan.' : 'Mohon maaf, pesanan lapangan Anda ditolak.';
+    const subject = scheduleChanged
+      ? `Perubahan jadwal booking: ${current.id}`
+      : isConfirmed
+        ? `Pesanan lapangan dikonfirmasi: ${current.id}`
+        : `Pembaruan pesanan lapangan: ${current.id}`;
+    const scheduleText = scheduleChanged
+      ? `Jadwal sebelumnya:\n${previousSchedule}\n\nJadwal baru:\n${schedule}`
+      : `Jadwal:\n${schedule}`;
+    const text = `Halo ${current.name},\n\n${statusMessage}\n\nKode pesanan: ${current.id}\n${scheduleText}\n\nRincian: ${nextDetails}\nTotal: Rp${Number(current.total).toLocaleString('id-ID')}\nStatus: ${nextStatus}${nextNote.trim() ? `\nCatatan admin: ${nextNote.trim()}` : ''}\n\nSimpan email ini sebagai bukti informasi pesanan.`;
+    const oldScheduleHtml = scheduleChanged
+      ? `<h3>Jadwal sebelumnya</h3>${previousSchedule.split('\n').map(line => `<p style="margin:6px 0">${escapeEmailHtml(line)}</p>`).join('')}`
+      : '';
+    const html = `<div style="font-family:Arial,sans-serif;color:#0f172a;line-height:1.5"><h2>${escapeEmailHtml(statusMessage)}</h2><p>Halo ${escapeEmailHtml(current.name)},</p><p><strong>Kode pesanan:</strong> ${escapeEmailHtml(current.id)}</p>${oldScheduleHtml}<h3>${scheduleChanged ? 'Jadwal baru' : 'Jadwal'}</h3>${schedule.split('\n').map(line => `<p style="margin:6px 0">${escapeEmailHtml(line)}</p>`).join('')}<p><strong>Rincian:</strong> ${escapeEmailHtml(nextDetails)}</p><p><strong>Total:</strong> Rp${Number(current.total).toLocaleString('id-ID')}</p><p><strong>Status:</strong> ${escapeEmailHtml(nextStatus)}</p>${nextNote.trim() ? `<p><strong>Catatan admin:</strong> ${escapeEmailHtml(nextNote.trim())}</p>` : ''}<p>Simpan email ini sebagai bukti informasi pesanan.</p></div>`;
     try {
       await deliverEmail({ to: current.email, subject, text, html });
       return res.json({ success: true, emailSent: true });
